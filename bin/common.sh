@@ -1,0 +1,226 @@
+#!/usr/bin/env bash
+# Shared helpers for evo.stocks bar scripts.
+
+EVO_BAR_CACHE_DIR="${EVO_BAR_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/omarchy/bar}"
+BAR_HISTORY_DIR="${BAR_HISTORY_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/omarchy/bar-history}"
+EVO_BAR_THEME_CSS="${EVO_BAR_THEME_CSS:-$HOME/.themes/current/evo-bar.css}"
+
+declare -gA GITHUB_COLORS=()
+
+evo_bar_history_path() {
+  mkdir -p "$BAR_HISTORY_DIR"
+  printf '%s/%s-history.json' "$BAR_HISTORY_DIR" "$1"
+}
+
+evo_secrets_get() {
+  local key="$1"
+  local rel="$2"
+  local value
+  command -v pass >/dev/null 2>&1 || return 1
+  value="$(pass show "omarchy/${rel}" 2>/dev/null || true)"
+  if [[ -n "$value" ]]; then
+    printf '%s' "$value"
+    return 0
+  fi
+  return 1
+}
+
+evo_bar_load_secrets() {
+  local key value
+  declare -A _secret_paths=(
+    [KRAKEN_API_KEY]="kraken/api-key"
+    [KRAKEN_SECRET]="kraken/api-secret"
+    [T212_API_KEY]="trading212/api-key"
+    [T212_API_SECRET]="trading212/api-secret"
+  )
+  for key in "$@"; do
+    [[ -n "${_secret_paths[$key]:-}" ]] || continue
+    value="$(evo_secrets_get "$key" "${_secret_paths[$key]}")" || continue
+    export "$key=$value"
+  done
+}
+
+evo_bar_load_heatmap_colors() {
+  declare -gA GITHUB_COLORS=()
+  local i color
+  if [[ -f "$EVO_BAR_THEME_CSS" ]]; then
+    for i in {0..4}; do
+      color=$(grep "@define-color github-$i" "$EVO_BAR_THEME_CSS" | awk '{print $3}' | tr -d ';' || true)
+      [[ -n "$color" ]] && GITHUB_COLORS[$i]="$color"
+    done
+  fi
+  : "${GITHUB_COLORS[0]:=#45475a}"
+  : "${GITHUB_COLORS[1]:=#89b4fa}"
+  : "${GITHUB_COLORS[2]:=#74c7ec}"
+  : "${GITHUB_COLORS[3]:=#89dceb}"
+  : "${GITHUB_COLORS[4]:=#cba6f7}"
+}
+
+evo_bar_cache_path() {
+  printf '%s/%s.json' "$EVO_BAR_CACHE_DIR" "$1"
+}
+
+evo_bar_cache_read() {
+  local key="$1" ttl="${2:-60}"
+  local path now mtime age content
+  path="$(evo_bar_cache_path "$key")"
+  [[ -f "$path" ]] || return 1
+  content="$(cat "$path")"
+  [[ -n "${content//[[:space:]]/}" ]] || return 1
+  now=$(date +%s)
+  mtime=$(stat -c %Y "$path" 2>/dev/null || echo 0)
+  age=$((now - mtime))
+  (( age < ttl )) || return 1
+  printf '%s' "$content"
+}
+
+evo_bar_cache_write() {
+  local key="$1" path tmp
+  mkdir -p "$EVO_BAR_CACHE_DIR"
+  path="$(evo_bar_cache_path "$key")"
+  tmp="$(mktemp "${path}.XXXXXX")"
+  cat >"$tmp"
+  mv "$tmp" "$path"
+}
+
+kraken_secret_hex() {
+  local secret_b64="$1"
+  if command -v xxd >/dev/null 2>&1; then
+    printf '%s' "$secret_b64" | base64 -d | xxd -p -c 256
+    return
+  fi
+  printf '%s' "$secret_b64" | base64 -d | od -An -tx1 | tr -d ' \n'
+}
+
+kraken_api_errors() {
+  local resp="$1"
+  jq -r '.error // [] | .[]' <<<"$resp" 2>/dev/null || true
+}
+
+evo_bar_build_candles_json() {
+  local -a rows=("$@")
+  local row day_iso open high low close lines
+
+  if ((${#rows[@]} == 0)); then
+    printf '[]'
+    return
+  fi
+
+  lines=""
+  for row in "${rows[@]}"; do
+    IFS='|' read -ra parts <<< "$row"
+    day_iso="${parts[0]}"
+    if ((${#parts[@]} >= 5)); then
+      open="${parts[1]}"
+      high="${parts[2]}"
+      low="${parts[3]}"
+      close="${parts[4]}"
+    elif ((${#parts[@]} >= 2)); then
+      close="${parts[1]}"
+      open="$close"
+      high="$close"
+      low="$close"
+    else
+      continue
+    fi
+    lines+="$(jq -cn \
+      --arg date "$day_iso" \
+      --argjson open "${open:-0}" \
+      --argjson high "${high:-0}" \
+      --argjson low "${low:-0}" \
+      --argjson close "${close:-0}" \
+      '{date: $date, open: $open, high: $high, low: $low, close: $close, value: $close}')"
+    lines+=$'\n'
+  done
+
+  if [[ -z "$lines" ]]; then
+    printf '[]'
+    return
+  fi
+  printf '%s' "$lines" | jq -s '.'
+}
+
+evo_bar_period_stats_json() {
+  local -a rows=("$@")
+  if ((${#rows[@]} == 0)); then
+    printf '{}'
+    return
+  fi
+
+  awk -F'|' -v n="${#rows[@]}" '
+    BEGIN {
+      first = ""
+      last = ""
+      minV = ""
+      maxV = ""
+    }
+    {
+      d = $1
+      if (NF >= 5) v = ($5 == "" ? 0 : $5 + 0)
+      else v = ($2 == "" ? 0 : $2 + 0)
+      if (first == "") first = v
+      last = v
+      if (minV == "" || v < minV) minV = v
+      if (maxV == "" || v > maxV) maxV = v
+    }
+    END {
+      change = 0
+      if (first + 0 != 0)
+        change = (last - first) / first * 100
+      printf "{\"days\":%d,\"high\":%.8f,\"low\":%.8f,\"changePct\":%.4f,\"start\":%.8f,\"end\":%.8f}\n",
+        n, maxV + 0, minV + 0, change, first + 0, last + 0
+    }
+  ' <<<"$(printf '%s\n' "${rows[@]}")"
+}
+
+evo_bar_merge_history() {
+  local path="$1"
+  local keep="${2:-30}"
+  local stdin_data existing merged tmp line d
+  mkdir -p "$(dirname "$path")"
+  stdin_data="$(cat)"
+
+  if [[ -f "$path" ]]; then
+    existing=$(jq -c 'if type == "array" then map(select(type == "object" and (.date // "") != "")) else [] end' "$path" 2>/dev/null || echo '[]')
+  else
+    existing='[]'
+  fi
+
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line//$'\r'/}"
+    [[ "$line" == *"|"* ]] || continue
+    d="${line%%|*}"
+    d="${d//[[:space:]]/}"
+    [[ -n "$d" ]] || continue
+    IFS='|' read -ra parts <<< "$line"
+    if ((${#parts[@]} >= 5)); then
+      existing=$(jq -c --arg d "$d" \
+        --argjson open "${parts[1]}" \
+        --argjson high "${parts[2]}" \
+        --argjson low "${parts[3]}" \
+        --argjson close "${parts[4]}" '
+        (map(select(.date != $d)) + [{
+          date: $d,
+          value: $close,
+          open: $open,
+          high: $high,
+          low: $low,
+          close: $close
+        }])
+      ' <<<"$existing" 2>/dev/null || echo "$existing")
+    fi
+  done <<<"$stdin_data"
+
+  merged=$(jq -c --argjson keep "$keep" 'sort_by(.date) | .[-$keep:]' <<<"$existing")
+  tmp="$(mktemp)"
+  printf '%s\n' "$merged" | jq '.' >"$tmp"
+  mv "$tmp" "$path"
+  jq -r '
+    .[]
+    | if (.open != null and .high != null and .low != null and .close != null) then
+        "\(.date)|\(.open)|\(.high)|\(.low)|\(.close)"
+      else
+        "\(.date)|\(.value)"
+      end
+  ' <<<"$merged"
+}

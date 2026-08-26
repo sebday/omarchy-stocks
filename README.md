@@ -1,0 +1,42 @@
+# Omarchy stocks plugin
+
+![Bar panel](preview.png)
+
+Bar widget for Kraken BTC and Trading 212 SPCX positions: live price, P/L, and 30-day candlestick charts.  
+
+The popup refreshes every 60 seconds while open. Click a market header to open TradingView (BTC) or Trading 212 (SPCX).
+
+## Install
+
+```bash
+omarchy plugin add /home/seb/projects/omarchy-stocks
+omarchy plugin enable evo.stocks
+```
+
+A local path works the same way. Plugins run as unsandboxed code inside `omarchy-shell`. Review the files before enabling.
+
+## Requirements
+
+- `curl`, `jq`, and `bash` on `PATH`
+- Kraken API key with read access to balances and trades
+- Trading 212 API key for the SPCX position
+
+## Auth
+
+Store credentials in `pass`:
+
+```bash
+pass insert omarchy/kraken/api-key
+pass insert omarchy/kraken/api-secret
+pass insert omarchy/trading212/api-key
+pass insert omarchy/trading212/api-secret
+```
+
+## IPC
+
+```bash
+omarchy-shell evo.stocks toggle
+omarchy-shell evo.stocks refresh
+omarchy-shell shell toggle evo.stocks '{}'
+```
+

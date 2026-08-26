@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "evo.stocks",
+  "name": "Stocks",
+  "version": "1.0.0",
+  "author": "seb",
+  "description": "BTC and SPCX holdings with candlestick charts",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Stocks",
+    "description": "Kraken BTC and Trading 212 SPCX positions",
+    "category": "Info",
+    "allowMultiple": false,
+    "defaultSection": "right"
+  }
+}
