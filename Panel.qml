@@ -26,7 +26,7 @@ Panel {
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
 
   readonly property int chartHistoryDays: 30
-  readonly property int chartBlockHeight: 96
+  readonly property int chartBlockHeight: 112
   readonly property int refreshSeconds: 60
 
   property bool btcLoading: false
@@ -201,20 +201,10 @@ Panel {
             horizontalAlignment: Text.AlignHCenter
           }
 
-          PanelSeparator {
-            visible: !root.loading || root.iconActive
-            foreground: root.foreground
-          }
-
           MarketSection {
             width: parent.width
             market: root.btc
             loading: root.btcLoading
-          }
-
-          PanelSeparator {
-            visible: !root.loading || root.iconActive
-            foreground: root.foreground
           }
 
           MarketSection {
@@ -291,6 +281,7 @@ Panel {
 
       SparklineChart {
         anchors.fill: parent
+        active: root.opened
         style: "candlestick"
         bullishColor: market.chartColor || root.accent
         bearishColor: root.urgent

@@ -17,6 +17,9 @@ Item {
   property color bearishColor: "#f38ba8"
   property int lineWidth: 2
   property string fontFamily: "sans-serif"
+  property real revealProgress: 1
+  property bool active: false
+  property bool pendingOpenReveal: false
 
   readonly property bool isLine: style === "line"
   readonly property bool isCandlestick: style === "candlestick"
@@ -33,7 +36,46 @@ Item {
     if (isCandlestick) candleCanvas.requestPaint()
   }
 
+  function candleReveal(index, count) {
+    if (count <= 0)
+      return 1
+    var edge = revealProgress * count - index
+    return Math.min(1, Math.max(0, edge / Math.max(1, count * 0.12)))
+  }
+
+  function startReveal() {
+    revealProgress = 0
+    revealAnim.restart()
+  }
+
+  function scheduleReveal() {
+    if (!active || bars.length === 0)
+      return
+    Qt.callLater(startReveal)
+  }
+
+  onActiveChanged: {
+    if (active) {
+      if (bars.length > 0)
+        scheduleReveal()
+      else
+        pendingOpenReveal = true
+    } else {
+      pendingOpenReveal = false
+      revealAnim.stop()
+      revealProgress = 1
+    }
+  }
+
   onBarsChanged: {
+    if (pendingOpenReveal && active && bars.length > 0) {
+      pendingOpenReveal = false
+      scheduleReveal()
+    }
+    repaintLine()
+    repaintCandles()
+  }
+  onRevealProgressChanged: {
     repaintLine()
     repaintCandles()
   }
@@ -57,6 +99,29 @@ Item {
   onStyleChanged: {
     repaintLine()
     repaintCandles()
+  }
+
+  Component.onCompleted: {
+    if (active && bars.length > 0)
+      scheduleReveal()
+  }
+
+  NumberAnimation {
+    id: revealAnim
+    target: root
+    property: "revealProgress"
+    from: 0
+    to: 1
+    duration: 800
+    easing.type: Easing.OutCubic
+  }
+
+  FrameAnimation {
+    running: revealAnim.running
+    onTriggered: {
+      repaintLine()
+      repaintCandles()
+    }
   }
 
   readonly property int scaledBarWidth: barWidth
@@ -167,18 +232,19 @@ Item {
 
       Item {
         required property var modelData
+        required property int index
         width: root.effectiveBarWidth
         height: chartRow.height
 
         Rectangle {
           width: parent.width
           height: modelData.level > 0
-            ? Math.max(2, chartRow.height * modelData.level / 7)
+            ? Math.max(2, chartRow.height * modelData.level / 7 * (0.35 + 0.65 * root.candleReveal(index, root.bars.length)))
             : 0
           anchors.bottom: parent.bottom
           radius: 2
           color: modelData.color || root.bullishColor
-          opacity: 0.85
+          opacity: 0.85 * root.candleReveal(index, root.bars.length)
         }
       }
     }
@@ -203,6 +269,7 @@ Item {
       var usableH = Math.max(1, h - padY * 2)
       var step = pts.length > 1 ? usableW / (pts.length - 1) : 0
       var sharedRange = root.hasSecondary ? root.combinedValueRange() : null
+      var revealEnd = root.revealProgress * Math.max(0, pts.length - 1)
 
       function drawSeries(series, color, fill, range) {
         if (!series || series.length === 0)
@@ -218,42 +285,61 @@ Item {
           return padY + usableH - ((n - minV) / span) * usableH
         }
 
+        function pointAt(idx) {
+          var clamped = Math.min(revealEnd, Math.max(0, idx))
+          var base = Math.floor(clamped)
+          var frac = clamped - base
+          var x = padX + clamped * step
+          var y0 = yAt(series[base].value)
+          if (frac <= 0 || base >= series.length - 1)
+            return { x: x, y: y0 }
+          var y1 = yAt(series[base + 1].value)
+          return { x: x, y: y0 + (y1 - y0) * frac }
+        }
+
+        var visibleEnd = Math.min(series.length - 1, Math.ceil(revealEnd))
+        if (visibleEnd < 0)
+          return
+
         if (fill) {
           ctx.beginPath()
-          for (var i = 0; i < series.length; i++) {
-            var x = padX + i * step
-            var y = yAt(series[i].value)
-            if (i === 0) ctx.moveTo(x, y)
-            else ctx.lineTo(x, y)
+          for (var i = 0; i <= visibleEnd; i++) {
+            var pt = pointAt(i)
+            if (i === 0) ctx.moveTo(pt.x, pt.y)
+            else ctx.lineTo(pt.x, pt.y)
           }
-          ctx.lineTo(padX + (series.length - 1) * step, h)
+          var tail = pointAt(revealEnd)
+          ctx.lineTo(tail.x, h)
           ctx.lineTo(padX, h)
           ctx.closePath()
-          ctx.globalAlpha = 0.14
+          ctx.globalAlpha = 0.14 * root.revealProgress
           ctx.fillStyle = color
           ctx.fill()
           ctx.globalAlpha = 1
         }
 
         ctx.beginPath()
-        for (var j = 0; j < series.length; j++) {
-          var x2 = padX + j * step
-          var y2 = yAt(series[j].value)
-          if (j === 0) ctx.moveTo(x2, y2)
-          else ctx.lineTo(x2, y2)
+        for (var j = 0; j <= visibleEnd; j++) {
+          var pt2 = pointAt(j)
+          if (j === 0) ctx.moveTo(pt2.x, pt2.y)
+          else ctx.lineTo(pt2.x, pt2.y)
         }
+        var tailPt = pointAt(revealEnd)
+        ctx.lineTo(tailPt.x, tailPt.y)
         ctx.strokeStyle = color
         ctx.lineWidth = root.lineWidth
         ctx.lineJoin = "round"
         ctx.lineCap = "round"
+        ctx.globalAlpha = 0.35 + 0.65 * root.revealProgress
         ctx.stroke()
+        ctx.globalAlpha = 1
 
-        var lastX = padX + (series.length - 1) * step
-        var lastY = yAt(series[series.length - 1].value)
         ctx.beginPath()
-        ctx.arc(lastX, lastY, 3, 0, Math.PI * 2)
+        ctx.arc(tailPt.x, tailPt.y, 3, 0, Math.PI * 2)
         ctx.fillStyle = color
+        ctx.globalAlpha = 0.35 + 0.65 * root.revealProgress
         ctx.fill()
+        ctx.globalAlpha = 1
       }
 
       if (root.hasSecondary)
@@ -299,6 +385,10 @@ Item {
       }
 
       for (var i = 0; i < pts.length; i++) {
+        var reveal = root.candleReveal(i, pts.length)
+        if (reveal <= 0)
+          continue
+
         var ohlc = root.ohlcForBar(pts[i], i, pts)
         var x = padX + i * slotW + slotW / 2
         var yHigh = yAt(ohlc.high)
@@ -307,18 +397,24 @@ Item {
         var yClose = yAt(ohlc.close)
         var bullish = ohlc.close >= ohlc.open
         var color = bullish ? root.bullishColor : root.bearishColor
+        var grow = 0.15 + 0.85 * reveal
+
+        yHigh = yClose + (yHigh - yClose) * grow
+        yLow = yClose + (yLow - yClose) * grow
+        yOpen = yClose + (yOpen - yClose) * grow
 
         ctx.beginPath()
         ctx.moveTo(x, yHigh)
         ctx.lineTo(x, yLow)
         ctx.strokeStyle = color
         ctx.lineWidth = 1
+        ctx.globalAlpha = reveal
         ctx.stroke()
 
         var top = Math.min(yOpen, yClose)
-        var bodyH = Math.max(1, Math.abs(yClose - yOpen))
+        var bodyH = Math.max(1, Math.abs(yClose - yOpen) * grow)
         ctx.fillStyle = color
-        ctx.globalAlpha = bullish ? 0.92 : 0.88
+        ctx.globalAlpha = (bullish ? 0.92 : 0.88) * reveal
         ctx.fillRect(x - bodyW / 2, top, bodyW, bodyH)
         ctx.globalAlpha = 1
       }

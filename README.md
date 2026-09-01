@@ -13,8 +13,6 @@ omarchy plugin add /home/seb/projects/omarchy-stocks
 omarchy plugin enable evo.stocks
 ```
 
-A local path works the same way. Plugins run as unsandboxed code inside `omarchy-shell`. Review the files before enabling.
-
 ## Requirements
 
 - `curl`, `jq`, and `bash` on `PATH`
