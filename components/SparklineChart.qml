@@ -426,6 +426,7 @@ Item {
   }
 
   Text {
+    textFormat: Text.PlainText
     anchors.centerIn: parent
     visible: root.showEmptyLabel && root.bars.length === 0
     text: "No chart data"

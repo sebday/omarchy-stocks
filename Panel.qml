@@ -41,7 +41,7 @@ Panel {
   readonly property bool iconError: !btcLoading && btcData && btcData.ok === false
   readonly property bool iconBusy: loading && !(btcData && btcData.ok === true)
   readonly property bool iconMuted: false
-  readonly property string barTooltip: Model.btcTooltip(btcData)
+  readonly property string barTooltip: Model.plain(Model.btcTooltip(btcData))
 
   readonly property string btcScript: Qt.resolvedUrl("bin/btc-status").toString().replace("file://", "")
   readonly property string spcxScript: Qt.resolvedUrl("bin/spcx-status").toString().replace("file://", "")
@@ -104,34 +104,74 @@ Panel {
 
   Process {
     id: btcProc
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: {
-        var raw = String(text || "").trim()
+    onStarted: { stdoutBuf = ""; stderrBuf = "" }
+
+    property string stdoutBuf: ""
+    property string stderrBuf: ""
+    stdout: SplitParser {
+      splitMarker: ""
+      onRead: function(chunk) {
+        btcProc.stdoutBuf += chunk
+        if (btcProc.stdoutBuf.length > 262144) {
+          btcProc.signal(15)
+          btcProc.stdoutBuf = ""
+        }
+      }
+    }
+    stderr: SplitParser {
+      splitMarker: ""
+      onRead: function(chunk) {
+        btcProc.stderrBuf += chunk
+        if (btcProc.stderrBuf.length > 4096) {
+          btcProc.signal(15)
+          btcProc.stderrBuf = ""
+        }
+      }
+    }
+      onExited: function(exitCode) {
+      var raw = String(stdoutBuf || "").trim()
         if (!raw) {
           root.btcLoading = false
           return
         }
         root.applyBtcPayload(raw)
-      }
     }
-    stderr: StdioCollector { waitForEnd: true }
   }
 
   Process {
     id: spcxProc
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: {
-        var raw = String(text || "").trim()
+    onStarted: { stdoutBuf = ""; stderrBuf = "" }
+
+    property string stdoutBuf: ""
+    property string stderrBuf: ""
+    stdout: SplitParser {
+      splitMarker: ""
+      onRead: function(chunk) {
+        spcxProc.stdoutBuf += chunk
+        if (spcxProc.stdoutBuf.length > 262144) {
+          spcxProc.signal(15)
+          spcxProc.stdoutBuf = ""
+        }
+      }
+    }
+    stderr: SplitParser {
+      splitMarker: ""
+      onRead: function(chunk) {
+        spcxProc.stderrBuf += chunk
+        if (spcxProc.stderrBuf.length > 4096) {
+          spcxProc.signal(15)
+          spcxProc.stderrBuf = ""
+        }
+      }
+    }
+      onExited: function(exitCode) {
+      var raw = String(stdoutBuf || "").trim()
         if (!raw) {
           root.spcxLoading = false
           return
         }
         root.applySpcxPayload(raw)
-      }
     }
-    stderr: StdioCollector { waitForEnd: true }
   }
 
   Timer {
@@ -191,6 +231,7 @@ Panel {
           spacing: Style.space(12)
 
           Text {
+            textFormat: Text.PlainText
             width: parent.width
             visible: root.loading && !root.iconActive
             text: "Loading markets…"
@@ -241,6 +282,7 @@ Panel {
 
         iconComponent: Component {
           Text {
+            textFormat: Text.PlainText
             text: Model.marketSymbolIcon(market.name)
             color: market.chartColor || root.accent
             font.family: root.fontFamily
@@ -323,6 +365,7 @@ Panel {
       spacing: Style.spacing.labelGap
 
       Text {
+        textFormat: Text.PlainText
         width: parent.width
         text: value
         color: special ? valueColor : foreground
@@ -334,6 +377,7 @@ Panel {
       }
 
       Text {
+        textFormat: Text.PlainText
         width: parent.width
         text: label
         color: dim

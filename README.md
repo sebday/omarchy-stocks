@@ -9,7 +9,7 @@ The popup refreshes every 60 seconds while open. Click a market header to open T
 ## Install
 
 ```bash
-omarchy plugin add /home/seb/projects/omarchy-stocks
+omarchy plugin add https://github.com/sebday/omarchy-stocks.git
 omarchy plugin enable evo.stocks
 ```
 
@@ -38,3 +38,16 @@ omarchy-shell evo.stocks refresh
 omarchy-shell shell toggle evo.stocks '{}'
 ```
 
+
+## Removing
+
+```bash
+omarchy plugin remove evo.stocks
+```
+
+That deletes the plugin directory. It does not delete:
+
+- `~/.cache/omarchy/bar/` and `~/.cache/omarchy/bar-history/`
+- `pass` entries under `omarchy/kraken/` and `omarchy/trading212/`
+
+Network: https://api.kraken.com, https://query1.finance.yahoo.com, https://live.trading212.com.

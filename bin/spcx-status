@@ -74,9 +74,13 @@ json_out() {
 
 fetch_yahoo_rows() {
   local raw
-  raw=$(curl -sf --max-time 12 \
-    -A 'Mozilla/5.0' \
-    'https://query1.finance.yahoo.com/v8/finance/chart/SPCX?interval=1d&range=3mo' 2>/dev/null) || raw=""
+  raw=$(
+    /usr/bin/curl -q -sS --fail --proto '=https' --proto-redir '=https' \
+      --max-time 12 --connect-timeout 5 --max-filesize 1048576 --noproxy '*' \
+      -A 'Mozilla/5.0' \
+      -- 'https://query1.finance.yahoo.com/v8/finance/chart/SPCX?interval=1d&range=3mo' \
+      | /usr/bin/head -c 1048577
+  ) || raw=""
   if [[ -z "$raw" ]]; then
     return 0
   fi
@@ -152,9 +156,17 @@ if [[ -z "${T212_API_KEY:-}" || -z "${T212_API_SECRET:-}" ]]; then
 fi
 
 BASE_URL="${T212_BASE_URL:-https://live.trading212.com}"
-POSITION=$(curl -sf --max-time 15 \
-  -u "${T212_API_KEY}:${T212_API_SECRET}" \
-  "${BASE_URL}/api/v0/equity/positions?ticker=SPCX_US_EQ" 2>/dev/null) || POSITION=""
+case "$BASE_URL" in https://live.trading212.com|https://demo.trading212.com) ;; *) BASE_URL="https://live.trading212.com" ;; esac
+case "$T212_API_KEY" in *'"'*|*\\*|$'\n'*) T212_API_KEY="" ;; esac
+case "$T212_API_SECRET" in *'"'*|*\\*|$'\n'*) T212_API_SECRET="" ;; esac
+POSITION=$(
+  printf '%s\n' "user = \"${T212_API_KEY}:${T212_API_SECRET}\"" \
+    | /usr/bin/curl -q -sS --fail --config - \
+        --proto '=https' --proto-redir '=https' \
+        --max-time 15 --connect-timeout 5 --max-filesize 1048576 --noproxy '*' \
+        -- "${BASE_URL}/api/v0/equity/positions?ticker=SPCX_US_EQ" \
+    | /usr/bin/head -c 1048577
+) || POSITION=""
 
 if [[ -z "$POSITION" ]]; then
   bars_from_cache

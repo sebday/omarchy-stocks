@@ -74,8 +74,12 @@ json_out() {
 
 fetch_ohlc_rows() {
   local ohlc
-  ohlc=$(curl -sf --max-time 10 \
-    'https://api.kraken.com/0/public/OHLC?pair=XBTUSD&interval=1440' 2>/dev/null) || ohlc=""
+  ohlc=$(
+    /usr/bin/curl -q -sS --fail --proto '=https' --proto-redir '=https' \
+      --max-time 10 --connect-timeout 5 --max-filesize 1048576 --noproxy '*' \
+      -- 'https://api.kraken.com/0/public/OHLC?pair=XBTUSD&interval=1440' \
+      | /usr/bin/head -c 1048577
+  ) || ohlc=""
   if [[ -z "$ohlc" ]]; then
     return 0
   fi
@@ -119,22 +123,27 @@ build_bars() {
 kraken_private() {
   local api_path="$1"
   local extra_data="${2:-}"
-  local nonce postdata sha256_file message sig secret_hex resp
+  local nonce postdata sig resp max=1048576
+  local sign_helper
+  sign_helper="$(cd "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/kraken-sign"
   nonce=$(date +%s%3N)
   postdata="nonce=${nonce}"
   [[ -n "$extra_data" ]] && postdata="${postdata}&${extra_data}"
-  secret_hex=$(kraken_secret_hex "$KRAKEN_SECRET") || return 1
-  [[ -n "$secret_hex" ]] || return 1
-  sha256_file=$(mktemp)
-  printf '%s%s' "$nonce" "$postdata" | openssl dgst -sha256 -binary >"$sha256_file"
-  message=$(printf '%s' "$api_path"; cat "$sha256_file")
-  rm -f "$sha256_file"
-  sig=$(printf '%s' "$message" | openssl dgst -sha512 -mac HMAC -macopt "hexkey:${secret_hex}" -binary | base64 -w0 2>/dev/null \
-    || printf '%s' "$message" | openssl dgst -sha512 -mac HMAC -macopt "hexkey:${secret_hex}" -binary | base64)
-  resp=$(curl -sf --max-time 15 -X POST "https://api.kraken.com${api_path}" \
-    -d "$postdata" \
-    -H "API-Key: ${KRAKEN_API_KEY}" \
-    -H "API-Sign: ${sig}") || return 1
+  sig=$(printf '%s\n%s\n%s\n%s\n' "$KRAKEN_SECRET" "$nonce" "$postdata" "$api_path" | /usr/bin/python3 -I "$sign_helper") || return 1
+  [[ -n "$sig" ]] || return 1
+  case "$KRAKEN_API_KEY" in *'"'*|*\\*|$'\n'*) return 1 ;; esac
+  case "$sig" in *'"'*|*\\*|$'\n'*) return 1 ;; esac
+  resp=$(
+    printf '%s\n' \
+      "header = \"API-Key: ${KRAKEN_API_KEY}\"" \
+      "header = \"API-Sign: ${sig}\"" \
+      | /usr/bin/curl -q -sS --fail --config - \
+          --proto '=https' --proto-redir '=https' \
+          --max-time 15 --connect-timeout 5 --max-filesize "$max" --noproxy '*' \
+          -X POST -d "$postdata" -- "https://api.kraken.com${api_path}" \
+      | /usr/bin/head -c $((max + 1))
+  ) || return 1
+  [ ${#resp} -le "$max" ] || return 1
   if [[ -n "$(kraken_api_errors "$resp")" ]]; then
     return 1
   fi
@@ -210,7 +219,12 @@ kraken_position_json() {
     '{balance: $balance, value: $value, currency: $currency, upnlPct: $upnlPct, averagePrice: $averagePrice}'
 }
 
-TICKER=$(curl -sf --max-time 8 'https://api.kraken.com/0/public/Ticker?pair=XBTUSD' 2>/dev/null) || TICKER=""
+TICKER=$(
+  /usr/bin/curl -q -sS --fail --proto '=https' --proto-redir '=https' \
+    --max-time 8 --connect-timeout 5 --max-filesize 1048576 --noproxy '*' \
+    -- 'https://api.kraken.com/0/public/Ticker?pair=XBTUSD' \
+    | /usr/bin/head -c 1048577
+) || TICKER=""
 
 if [[ -z "$TICKER" ]] || ! echo "$TICKER" | jq -e '.result | length > 0' >/dev/null 2>&1; then
   evo_bar_load_heatmap_colors || true
@@ -258,7 +272,12 @@ QUOTE_JSON=$(jq -cn \
 build_bars "$LAST"
 PRICE_S=$(fmt_price "$LAST")
 
-GBP_TICKER=$(curl -sf --max-time 8 'https://api.kraken.com/0/public/Ticker?pair=XBTGBP' 2>/dev/null) || GBP_TICKER=""
+GBP_TICKER=$(
+  /usr/bin/curl -q -sS --fail --proto '=https' --proto-redir '=https' \
+    --max-time 8 --connect-timeout 5 --max-filesize 1048576 --noproxy '*' \
+    -- 'https://api.kraken.com/0/public/Ticker?pair=XBTGBP' \
+    | /usr/bin/head -c 1048577
+) || GBP_TICKER=""
 GBP_LAST=""
 if [[ -n "$GBP_TICKER" ]] && echo "$GBP_TICKER" | jq -e '.result | length > 0' >/dev/null 2>&1; then
   GBP_LAST=$(echo "$GBP_TICKER" | jq -r '.result | to_entries[0].value | .c[0]')
@@ -269,7 +288,6 @@ KRAKEN_ERR=""
 if [[ -z "${KRAKEN_API_KEY:-}" || -z "${KRAKEN_SECRET:-}" ]]; then
   KRAKEN_ERR="set KRAKEN_API_KEY and KRAKEN_SECRET in pass (omarchy/kraken/*)"
 else
-  export KRAKEN_API_KEY KRAKEN_SECRET
   POSITION_JSON=$(kraken_position_json "$LAST" "$GBP_LAST" 2>/dev/null) || {
     KRAKEN_ERR="kraken api request failed"
     POSITION_JSON='{}'
