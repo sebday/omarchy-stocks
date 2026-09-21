@@ -45,7 +45,10 @@ BarWidget {
   readonly property bool iconBusy: panelLoader.item ? panelLoader.item.iconBusy === true : false
   readonly property bool iconMuted: panelLoader.item ? panelLoader.item.iconMuted === true : false
   readonly property string tooltip: panelLoader.item ? panelLoader.item.barTooltip : "Stocks"
+  readonly property string valueText: panelLoader.item ? panelLoader.item.barValue : ""
+  readonly property real openPanelIndicatorWidth: button.labelWidth
 
+  visible: valueText !== ""
   implicitWidth: button.implicitWidth
   implicitHeight: button.implicitHeight
   width: implicitWidth
@@ -65,11 +68,13 @@ BarWidget {
     }
   }
 
-  BarIconButton {
+  WidgetButton {
     id: button
     anchors.fill: parent
     bar: root.bar
-    text: "󰄪"
+    text: root.valueText
+    hasVisualContent: root.valueText !== ""
+    horizontalMargin: 8.75
     active: root.iconError
     useActiveColor: root.iconError
     dimmed: root.iconMuted && !root.iconError

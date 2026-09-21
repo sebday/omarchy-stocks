@@ -168,3 +168,21 @@ function marketSymbolIcon(name) {
   if (name === "SPCX") return "𝕏"
   return name ? String(name).charAt(0) : "?"
 }
+
+function barPricePart(name, data) {
+  if (!data || !data.quote) return ""
+  var price = data.quote.price
+  if (price === undefined || price === null) return ""
+  var formatted = fmtUsd(price)
+  if (formatted === "—") return ""
+  return marketSymbolIcon(name) + " " + formatted
+}
+
+function barPrices(btcData, spcxData) {
+  var parts = []
+  var btc = barPricePart("BTC", btcData)
+  var spcx = barPricePart("SPCX", spcxData)
+  if (btc) parts.push(btc)
+  if (spcx) parts.push(spcx)
+  return plain(parts.join("  "), 48)
+}

@@ -42,6 +42,7 @@ Panel {
   readonly property bool iconBusy: loading && !(btcData && btcData.ok === true)
   readonly property bool iconMuted: false
   readonly property string barTooltip: Model.plain(Model.btcTooltip(btcData))
+  readonly property string barValue: Model.barPrices(btcData, spcxData)
 
   readonly property string btcScript: Qt.resolvedUrl("bin/btc-status").toString().replace("file://", "")
   readonly property string spcxScript: Qt.resolvedUrl("bin/spcx-status").toString().replace("file://", "")
