@@ -33,6 +33,12 @@ function fmtUsd(val) {
   return "$" + n.toFixed(2)
 }
 
+function fmtUsdWhole(val) {
+  var n = parseFloat(val)
+  if (isNaN(n)) return "—"
+  return formatRevenue(n, "$")
+}
+
 function fmtGbp(val) {
   var n = parseFloat(val)
   if (isNaN(n)) return "—"
@@ -139,7 +145,9 @@ function marketStatBoxes(market, accent, urgent, foreground) {
   var position = market.position || {}
   var quote = market.quote || {}
   var price = quote.price
-  var priceValue = price !== undefined && price !== null ? fmtUsd(price) : "—"
+  var priceValue = price !== undefined && price !== null
+    ? (market.name === "SPCX" ? fmtUsdWhole(price) : fmtUsd(price))
+    : "—"
   var quantityValue = market.name === "BTC" ? fmtBtc(position.balance) : fmtQty(position.quantity)
   var quantityLabel = market.name === "BTC" ? "BTC" : "Shares"
   var upnl = position.upnlPct
@@ -173,7 +181,7 @@ function barPricePart(name, data) {
   if (!data || !data.quote) return ""
   var price = data.quote.price
   if (price === undefined || price === null) return ""
-  var formatted = fmtUsd(price)
+  var formatted = name === "SPCX" ? fmtUsdWhole(price) : fmtUsd(price)
   if (formatted === "—") return ""
   return marketSymbolIcon(name) + " " + formatted
 }
