@@ -27,7 +27,7 @@ Panel {
 
   readonly property int chartHistoryDays: 30
   readonly property int chartBlockHeight: 112
-  readonly property int refreshSeconds: 60
+  readonly property int refreshSeconds: 300
 
   property bool btcLoading: false
   property bool spcxLoading: false
@@ -178,7 +178,7 @@ Panel {
   Timer {
     id: refreshTimer
     interval: root.refreshSeconds * 1000
-    running: root.opened
+    running: true
     repeat: true
     onTriggered: root.refresh()
   }

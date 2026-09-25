@@ -4,7 +4,7 @@
 
 Bar widget for Kraken BTC and Trading 212 SPCX positions: live price, P/L, and 30-day candlestick charts.  
 
-The popup refreshes every 60 seconds while open. Click a market header to open TradingView (BTC) or Trading 212 (SPCX).
+Prices refresh every 5 minutes, including the figures on the bar. Click a market header to open TradingView (BTC) or Trading 212 (SPCX).
 
 ## Install
 
