@@ -68,7 +68,7 @@ Panel {
   property bool newsLoading: false
   property var newsData: ({ items: [] })
   property bool ready: false
-  property bool started: false
+  property int priceAttempts: 0
 
   readonly property bool loading: activeLoading
 
@@ -87,6 +87,8 @@ Panel {
   function refreshBtc() {
     if (!btcScript || btcProc.running) return
     btcLoading = true
+    btcProc.stdoutBuf = ""
+    btcProc.stderrBuf = ""
     btcProc.command = ["bash", btcScript, String(chartHistoryDays)]
     btcProc.running = true
   }
@@ -94,8 +96,19 @@ Panel {
   function refreshSpcx() {
     if (!spcxScript || spcxProc.running) return
     spcxLoading = true
+    spcxProc.stdoutBuf = ""
+    spcxProc.stderrBuf = ""
     spcxProc.command = ["bash", spcxScript, String(chartHistoryDays)]
     spcxProc.running = true
+  }
+
+  function retryPrice() {
+    if (!ready || market === "" || priceAttempts >= 2) return
+    priceAttempts++
+    Qt.callLater(function() {
+      if (root.spcxMarket) root.refreshSpcx()
+      else root.refreshBtc()
+    })
   }
 
   function applyNewsPayload(raw) {
@@ -119,8 +132,7 @@ Panel {
   }
 
   function ensureStarted() {
-    if (!ready || started || market === "") return
-    started = true
+    if (!ready || market === "") return
     refresh()
   }
 
@@ -149,14 +161,12 @@ Panel {
 
   Component.onCompleted: {
     ready = true
-    ensureStarted()
+    // Settings arrive after the panel is constructed. A deferred refresh
+    // still runs once market is set, without waiting for a click.
+    Qt.callLater(root.ensureStarted)
   }
 
-  onMarketChanged: {
-    if (!ready || market === "") return
-    if (!started) ensureStarted()
-    else refresh()
-  }
+  onMarketChanged: Qt.callLater(root.ensureStarted)
 
   onOpenedChanged: if (opened) {
     refresh()
@@ -165,7 +175,6 @@ Panel {
 
   Process {
     id: btcProc
-    onStarted: { stdoutBuf = ""; stderrBuf = "" }
 
     property string stdoutBuf: ""
     property string stderrBuf: ""
@@ -193,15 +202,16 @@ Panel {
       var raw = String(stdoutBuf || "").trim()
         if (!raw) {
           root.btcLoading = false
+          root.retryPrice()
           return
         }
+        root.priceAttempts = 0
         root.applyBtcPayload(raw)
     }
   }
 
   Process {
     id: spcxProc
-    onStarted: { stdoutBuf = ""; stderrBuf = "" }
 
     property string stdoutBuf: ""
     property string stderrBuf: ""
@@ -229,8 +239,10 @@ Panel {
       var raw = String(stdoutBuf || "").trim()
         if (!raw) {
           root.spcxLoading = false
+          root.retryPrice()
           return
         }
+        root.priceAttempts = 0
         root.applySpcxPayload(raw)
     }
   }
