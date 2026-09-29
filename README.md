@@ -2,9 +2,22 @@
 
 ![Bar panel](preview.png)
 
-Bar widget for Kraken BTC and Trading 212 SPCX positions: live price, P/L, and 30-day candlestick charts.  
+Bar widget for Kraken BTC and Trading 212 SPCX. Each market is its own bar icon: live price, P/L, a 30-day candlestick chart, and three headlines at the bottom of the panel.
 
-Prices refresh every 5 minutes, including the figures on the bar. Click a market header to open TradingView (BTC) or Trading 212 (SPCX).
+Prices refresh every 5 minutes, including the figure on the bar. Headlines refresh once a day. Click a market header to open TradingView (BTC) or Trading 212 (SPCX).
+
+## Two icons
+
+Place one layout entry per market in `~/.config/omarchy/shell.json`:
+
+```json
+{ "id": "evo.stocks", "market": "btc" },
+{ "id": "evo.stocks", "market": "spcx" }
+```
+
+## Headlines
+
+`bin/market-news` asks the Omarchy default agent for three headlines and caches them for 24 hours. `omarchy agent` opens a terminal, so the script runs that same agent headless (`cursor-agent --print --mode ask`). It does not pass `--model`. Cursor then uses the model selected in `~/.cursor/cli-config.json`. An untouched CLI config selects Auto, model id `default`.
 
 ## Install
 
@@ -33,9 +46,10 @@ pass insert omarchy/trading212/api-secret
 ## IPC
 
 ```bash
-omarchy-shell evo.stocks toggle
-omarchy-shell evo.stocks refresh
-omarchy-shell shell toggle evo.stocks '{}'
+omarchy-shell evo.stocks.btc toggle
+omarchy-shell evo.stocks.spcx toggle
+omarchy-shell evo.stocks.btc refresh
+omarchy-shell evo.stocks.spcx refresh
 ```
 
 
@@ -50,4 +64,4 @@ That deletes the plugin directory. It does not delete:
 - `~/.cache/omarchy/bar/` and `~/.cache/omarchy/bar-history/`
 - `pass` entries under `omarchy/kraken/` and `omarchy/trading212/`
 
-Network: https://api.kraken.com, https://query1.finance.yahoo.com, https://live.trading212.com.
+Network: https://api.kraken.com, https://query1.finance.yahoo.com, https://live.trading212.com, and the default agent's API for the daily headlines.

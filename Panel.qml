@@ -37,17 +37,40 @@ Panel {
   readonly property var btc: Model.marketSection(btcData, "BTC", "https://www.tradingview.com/symbols/BTCUSD/", accent, chartHistoryDays)
   readonly property var spcx: Model.marketSection(spcxData, "SPCX", "https://app.trading212.com/", "#f9e2af", chartHistoryDays)
 
-  readonly property bool iconActive: Model.hasPosition(btcData) || Model.hasPosition(spcxData)
-  readonly property bool iconError: !btcLoading && btcData && btcData.ok === false
-  readonly property bool iconBusy: loading && !(btcData && btcData.ok === true)
+  readonly property string market: {
+    var raw = settings && settings.market !== undefined && settings.market !== null
+      ? String(settings.market).toLowerCase()
+      : ""
+    if (raw === "btc" || raw === "spcx") return raw
+    return ""
+  }
+  readonly property bool spcxMarket: market === "spcx"
+  readonly property var activeData: spcxMarket ? spcxData : btcData
+  readonly property bool activeLoading: spcxMarket ? spcxLoading : btcLoading
+
+  readonly property bool iconActive: Model.hasPosition(activeData)
+  readonly property bool iconError: market !== "" && !activeLoading && activeData && activeData.ok === false
+  readonly property bool iconBusy: activeLoading && !(activeData && activeData.ok === true)
   readonly property bool iconMuted: false
-  readonly property string barTooltip: Model.plain(Model.btcTooltip(btcData))
-  readonly property string barValue: Model.barPrices(btcData, spcxData)
+  readonly property string barTooltip: market === "" ? "" : Model.plain(Model.marketTooltip(spcxMarket ? "SPCX" : "BTC", activeData))
+  readonly property string barValue: {
+    if (market === "") return ""
+    var name = spcxMarket ? "SPCX" : "BTC"
+    var priced = Model.barPrice(name, activeData)
+    if (priced !== "") return priced
+    return Model.plain(Model.marketSymbolIcon(name))
+  }
 
   readonly property string btcScript: Qt.resolvedUrl("bin/btc-status").toString().replace("file://", "")
   readonly property string spcxScript: Qt.resolvedUrl("bin/spcx-status").toString().replace("file://", "")
+  readonly property string newsScript: Qt.resolvedUrl("bin/market-news").toString().replace("file://", "")
 
-  readonly property bool loading: btcLoading || spcxLoading
+  property bool newsLoading: false
+  property var newsData: ({ items: [] })
+  property bool ready: false
+  property bool started: false
+
+  readonly property bool loading: activeLoading
 
   function applyBtcPayload(raw) {
     btcLoading = false
@@ -75,14 +98,42 @@ Panel {
     spcxProc.running = true
   }
 
+  function applyNewsPayload(raw) {
+    newsLoading = false
+    var parsed = Model.parseNewsPayload(raw)
+    if (parsed.ok) newsData = parsed
+  }
+
+  function refreshNews() {
+    if (!newsScript || newsProc.running || market === "") return
+    newsLoading = true
+    newsProc.command = ["bash", newsScript, market]
+    newsProc.running = true
+  }
+
   function refresh() {
-    refreshBtc()
-    refreshSpcx()
+    if (market === "") return
+    if (spcxMarket) refreshSpcx()
+    else refreshBtc()
+    refreshNews()
+  }
+
+  function ensureStarted() {
+    if (!ready || started || market === "") return
+    started = true
+    refresh()
   }
 
   function openMarketUrl(url) {
     if (!url) return
     Quickshell.execDetached(["xdg-open", url])
+    root.close()
+  }
+
+  function openNewsUrl(url) {
+    var safe = Model.httpsUrl(url)
+    if (!safe) return
+    Quickshell.execDetached(["xdg-open", safe])
     root.close()
   }
 
@@ -96,7 +147,16 @@ Panel {
     else root.openFromHotkey()
   }
 
-  Component.onCompleted: refresh()
+  Component.onCompleted: {
+    ready = true
+    ensureStarted()
+  }
+
+  onMarketChanged: {
+    if (!ready || market === "") return
+    if (!started) ensureStarted()
+    else refresh()
+  }
 
   onOpenedChanged: if (opened) {
     refresh()
@@ -185,15 +245,56 @@ Panel {
 
 
 
-  IpcHandler {
-    target: root.ipcTarget
+  Process {
+    id: newsProc
+    onStarted: { stdoutBuf = ""; stderrBuf = "" }
 
-    function open(): void { root.openFromHotkey() }
-    function close(): void { root.close() }
-    function show(): void { root.openFromHotkey() }
-    function hide(): void { root.close() }
-    function toggle(): void { root.toggle() }
-    function refresh(): string { root.refresh(); return "ok" }
+    property string stdoutBuf: ""
+    property string stderrBuf: ""
+    stdout: SplitParser {
+      splitMarker: ""
+      onRead: function(chunk) {
+        newsProc.stdoutBuf += chunk
+        if (newsProc.stdoutBuf.length > 65536) {
+          newsProc.signal(15)
+          newsProc.stdoutBuf = ""
+        }
+      }
+    }
+    stderr: SplitParser {
+      splitMarker: ""
+      onRead: function(chunk) {
+        newsProc.stderrBuf += chunk
+        if (newsProc.stderrBuf.length > 4096) {
+          newsProc.signal(15)
+          newsProc.stderrBuf = ""
+        }
+      }
+    }
+    onExited: function(exitCode) {
+      var raw = String(stdoutBuf || "").trim()
+      if (!raw) {
+        root.newsLoading = false
+        return
+      }
+      root.applyNewsPayload(raw)
+    }
+  }
+
+  Loader {
+    active: root.market !== ""
+    sourceComponent: Component {
+      IpcHandler {
+        target: "evo.stocks." + root.market
+
+        function open(): void { root.openFromHotkey() }
+        function close(): void { root.close() }
+        function show(): void { root.openFromHotkey() }
+        function hide(): void { root.close() }
+        function toggle(): void { root.toggle() }
+        function refresh(): string { root.refresh(); return "ok" }
+      }
+    }
   }
 
   KeyboardPanel {
@@ -235,7 +336,7 @@ Panel {
             textFormat: Text.PlainText
             width: parent.width
             visible: root.loading && !root.iconActive
-            text: "Loading markets…"
+            text: "Loading…"
             color: root.foreground
             font.family: root.fontFamily
             font.pixelSize: Style.font.body
@@ -245,16 +346,105 @@ Panel {
 
           MarketSection {
             width: parent.width
-            market: root.btc
-            loading: root.btcLoading
+            visible: root.market !== ""
+            market: root.spcxMarket ? root.spcx : root.btc
+            loading: root.activeLoading
           }
 
-          MarketSection {
+          NewsSection {
             width: parent.width
-            market: root.spcx
-            loading: root.spcxLoading
+            visible: root.market !== ""
+            loading: root.newsLoading
+            items: root.newsData && root.newsData.items ? root.newsData.items : []
           }
         }
+      }
+    }
+  }
+
+  component NewsSection: Column {
+    id: news
+    property bool loading: false
+    property var items: []
+    spacing: Style.space(6)
+
+    Text {
+      textFormat: Text.PlainText
+      width: parent.width
+      text: "News"
+      color: root.dim
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.caption
+      font.bold: true
+    }
+
+    Text {
+      textFormat: Text.PlainText
+      width: parent.width
+      visible: news.loading && (!news.items || news.items.length === 0)
+      text: "Fetching headlines…"
+      color: root.dim
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.caption
+    }
+
+    Text {
+      textFormat: Text.PlainText
+      width: parent.width
+      visible: !news.loading && (!news.items || news.items.length === 0)
+      text: "No headlines"
+      color: root.dim
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.caption
+    }
+
+    Repeater {
+      model: news.items || []
+
+      NewsRow {
+        required property var modelData
+        width: news.width
+        title: String(modelData.title || "")
+        source: String(modelData.source || "")
+        url: String(modelData.url || "")
+      }
+    }
+  }
+
+  component NewsRow: MouseArea {
+    property string title: ""
+    property string source: ""
+    property string url: ""
+    implicitHeight: newsRow.implicitHeight
+    enabled: url.indexOf("https://") === 0
+    hoverEnabled: enabled
+    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+    onClicked: root.openNewsUrl(url)
+
+    RowLayout {
+      id: newsRow
+      width: parent.width
+      spacing: Style.space(8)
+
+      Text {
+        textFormat: Text.PlainText
+        Layout.fillWidth: true
+        text: title
+        color: root.foreground
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.body
+        elide: Text.ElideRight
+      }
+
+      Text {
+        textFormat: Text.PlainText
+        visible: source !== ""
+        text: source
+        color: root.dim
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.caption
+        elide: Text.ElideRight
+        Layout.maximumWidth: parent.width * 0.4
       }
     }
   }

@@ -177,6 +177,61 @@ function marketSymbolIcon(name) {
   return name ? String(name).charAt(0) : "?"
 }
 
+function marketTooltip(name, data) {
+  if (!data || !data.quote) return name || "Market"
+  var price = data.quote.price
+  if (price === undefined || price === null) return name || "Market"
+  var formatted = name === "SPCX" ? fmtUsdWhole(price) : fmtUsd(price)
+  if (formatted === "—") return name || "Market"
+  return name + " " + formatted
+}
+
+function barPrice(name, data) {
+  return plain(barPricePart(name, data), 32)
+}
+
+function httpsUrl(value) {
+  var s = String(value || "")
+  if (!s || s.length > 300 || s.indexOf("https://") !== 0) return ""
+  for (var i = 0; i < s.length; i++) {
+    var code = s.charCodeAt(i)
+    if (code <= 32 || code >= 127) return ""
+    var c = s.charAt(i)
+    if (c === "<" || c === ">" || c === "\"" || c === "'" || c === "\\") return ""
+  }
+  return s
+}
+
+function parseNewsPayload(raw) {
+  var text = String(raw || "").trim()
+  if (!text) return { ok: false, items: [] }
+  try {
+    var json = JSON.parse(text)
+  } catch (e) {
+    return { ok: false, items: [] }
+  }
+  var items = []
+  var rawItems = Array.isArray(json.items) ? json.items : []
+  for (var i = 0; i < rawItems.length && items.length < 3; i++) {
+    var item = rawItems[i]
+    if (!item || typeof item !== "object") continue
+    var url = httpsUrl(item.url)
+    var title = plain(item.title, 110)
+    if (!url || !title) continue
+    items.push({
+      title: title,
+      source: plain(item.source, 40),
+      url: url
+    })
+  }
+  return {
+    ok: json.ok === true && items.length > 0,
+    items: items,
+    model: plain(json.model, 40),
+    modelId: plain(json.modelId, 80)
+  }
+}
+
 function barPricePart(name, data) {
   if (!data || !data.quote) return ""
   var price = data.quote.price
