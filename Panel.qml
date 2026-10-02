@@ -487,7 +487,7 @@ Panel {
           Text {
             textFormat: Text.PlainText
             text: Model.marketSymbolIcon(market.name)
-            color: market.chartColor || root.accent
+            color: root.foreground
             font.family: root.fontFamily
             font.pixelSize: Style.font.display
             opacity: 0.92
@@ -499,8 +499,8 @@ Panel {
     GridLayout {
       width: parent.width
       columns: 4
-      columnSpacing: Style.space(8)
-      rowSpacing: Style.space(8)
+      columnSpacing: Style.space(16)
+      rowSpacing: Style.space(16)
 
       Repeater {
         model: Model.marketStatBoxes(market, root.accent, root.urgent, root.foreground)
@@ -546,7 +546,8 @@ Panel {
     }
   }
 
-  component StatBox: BorderSurface {
+  component StatBox: Item {
+    id: tile
     property string value: ""
     property string label: ""
     property color valueColor: foreground
@@ -556,38 +557,61 @@ Panel {
     property color dim: Qt.darker(foreground, 1.4)
     property string fontFamily: Style.font.family
 
-    implicitHeight: tileColumn.implicitHeight + Style.spacing.lg * 2
-    color: customFill ? Qt.rgba(valueColor.r, valueColor.g, valueColor.b, 0.14) : Color.popups.background
-    borderSpec: Border.surfaceSpec("popups", "border", Color.popups.border, 1)
-    radius: Style.cornerRadius
+    implicitWidth: Style.space(108)
+    implicitHeight: Style.font.heading + Style.space(56)
 
-    Column {
-      id: tileColumn
-      anchors.centerIn: parent
-      width: parent.width - Style.spacing.lg * 2
-      spacing: Style.spacing.labelGap
+    Rectangle {
+      id: frame
+      anchors.fill: parent
+      anchors.topMargin: legendChip.visible ? legendChip.height / 2 : 0
+      color: "transparent"
+      radius: Style.space(8)
+      border.width: 1
+      border.color: Qt.rgba(tile.dim.r, tile.dim.g, tile.dim.b, 0.9)
+      antialiasing: true
+    }
 
-      Text {
-        textFormat: Text.PlainText
-        width: parent.width
-        text: value
-        color: special ? valueColor : foreground
-        font.family: fontFamily
-        font.pixelSize: special ? Style.font.title : Style.font.body
-        font.bold: special
-        horizontalAlignment: Text.AlignHCenter
-        elide: Text.ElideRight
+    Item {
+      id: legendChip
+      x: Style.space(14)
+      y: 0
+      width: legendTextItem.implicitWidth + Style.space(8)
+      height: Math.max(1, legendTextItem.implicitHeight)
+      visible: tile.label !== ""
+
+      Rectangle {
+        anchors.fill: parent
+        color: Color.popups.background
       }
 
       Text {
+        id: legendTextItem
+        x: Style.space(4)
+        anchors.verticalCenter: parent.verticalCenter
         textFormat: Text.PlainText
-        width: parent.width
-        text: label
-        color: dim
-        font.family: fontFamily
+        text: tile.label
+        color: tile.dim
+        font.family: tile.fontFamily
         font.pixelSize: Style.font.caption
-        horizontalAlignment: Text.AlignHCenter
+        font.bold: true
       }
+    }
+
+    Text {
+      anchors.fill: frame
+      anchors.leftMargin: Style.space(6)
+      anchors.rightMargin: Style.space(6)
+      textFormat: Text.PlainText
+      text: tile.value
+      color: tile.special ? tile.valueColor : tile.foreground
+      font.family: tile.fontFamily
+      font.pixelSize: Style.font.display
+      font.bold: true
+      horizontalAlignment: Text.AlignHCenter
+      verticalAlignment: Text.AlignVCenter
+      elide: Text.ElideRight
+      fontSizeMode: Text.HorizontalFit
+      minimumPixelSize: Style.font.caption
     }
   }
 }
